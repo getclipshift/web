@@ -1,0 +1,17 @@
+{
+  "name": "clipshift",
+  "short_name": "clipshift",
+  "description": "Clipshift - a clipboard syncing application",
+  "scope": "/web/",
+  "start_url": "/web/",
+  "background_color": "#ffffff",
+  "theme_color": "#ffffff",
+  "display": "standalone", 
+  "icons": [
+      {
+        "src": "/web/img/icon.png",
+        "type": "image/png",
+        "sizes": "700x700"
+      }
+  ]
+}

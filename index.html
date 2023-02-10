@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html lang="en" class="has-background-dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>clipshift</title>
+  <link rel="canonical" href="https://getclipshift.github.io/web/" />
+  <link rel="manifest" href="/web/manifest.webmanifest">
+  <link rel="stylesheet" href="css/styles.css">
+</head>
+<body>
+
+  <section class="section">
+    <div class="container is-max-desktop has-text-light">
+      <p class="title is-1 has-text-centered has-text-light mt-4">⬆️ clipshift</p>
+
+      <div class="columns is-centered">
+        <div class="column is-half-desktop is-three-quarters-tablet is-full-mobile" id="app"></div>
+      </div>
+  </section>
+
+  <script>
+      if (navigator.serviceWorker) {
+        navigator.serviceWorker.register (
+          '/web/sw.js',
+          {scope: '/web/'}
+        )
+      }
+  </script>
+  <script src="js/app.js" type="module"></script>
+</body>
+</html>
