@@ -1,319 +1,263 @@
+import { h, Component, render, createRef } from 'https://esm.sh/preact@10.12.1';
+import htm from 'https://unpkg.com/htm@3.1.1?module';
 
-import { el, list, mount, setAttr, setChildren, unmount } from "https://redom.js.org/redom.es.min.js";
+import { NtfyClient } from './ntfy.js';
+import { NostrClient } from './nostr.js';
+
+const html = htm.bind(h);
 
 const BACKEND_TYPES = {
   nostr: 'nostr',
   ntfy: 'ntfy'
 }
 
-let CLIPS = [];
-
-class NtfyClient {
-  constructor(client, host, topic, user, pass) {
-    this.client = client;
-    let authPart = '';
-    if (user && pass) {
-      const header = `Basic ${window.btoa(`${user}:${pass}`)}`;
-      authPart = '?auth=' + window.btoa(header).replace(/=+$/g, '');
-    }
-    this.subUrl = `${host}/${topic}/sse${authPart}`;
-    this.postUrl = `${host}/${topic}${authPart}`;
-
-    this.eventSource = new EventSource(this.subUrl);
-    this.eventSource.onmessage = this.handleEvent;
-  }
-
-  handleEvent(e) {
-    const message = JSON.parse(e.data);
-    if (message.title === this.client) return;
-    addClip(message.title, message.message, Date.now());
-  }
-
-  sendClip(contents) {
-    fetch(this.postUrl, {
-      method: 'POST',
-      body: contents,
-      headers: {
-        'Title': this.client,
-        'Priority': 'min'
-      }
-    })
-  }
-
-  close() { this.eventSource.close(); }
-}
-
-class Input {
-  constructor(label, options) {
-    const defaultOptions = {
-      type: 'text',
-      placeholder: label
-    };
-    const mergedOptions = {...defaultOptions, ...options};
-    this.el = el('div', { className: 'field' },
-      this.label = el('label', { className: 'label' }, label),
-      el('div', { className: 'control' },
-        this.field = el('input', { className: 'input', type: mergedOptions.type, placeholder: mergedOptions.placeholder })
-      )
-    );
-  }
-
-  getValue() { return this.field.value; }
-  setValue(value) { this.field.value = value; }
-  setLabel(value) { this.label.textContent = value; }
-  setType(value) { this.field.setAttribute('type', value); }
-  disable() { this.field.setAttribute('disabled', ''); }
-  enable() { this.field.removeAttribute('disabled'); }
-}
-
-class AddEditBackendModal {
+class Clip extends Component {
   constructor() {
-    this.data = {};
+    super();
 
-    this.title = el('p', { className: 'modal-card-title' });
-    this.closeButton = el('button', { className: 'delete' });
-    this.closeButton.onclick = () => { this.destroy() };
-
-    this.typeSelect = el('select',
-      el('option', { value: 'ntfy' }, 'ntfy'),
-      el('option', { value: 'nostr' }, 'nostr')
-    );
-
-    this.saveButton = el('button', { className: 'button is-success' }, 'Save');
-    this.saveButton.onclick = () => { this.save() };
-    this.cancelButton = el('button', { className: 'button' }, 'Cancel');
-    this.cancelButton.onclick = () => { this.destroy() };
-
-    this.el = el('div', { className: 'modal' }, [
-      el('div', { className: 'modal-background' }),
-      el('div', { className: 'modal-card' }, [
-        el('header', { className: 'modal-card-head' }, [
-          this.title,
-          this.closeButton
-        ]),
-        el('section', { className: 'modal-card-body' },
-          this.clientInput = new Input('Client Name', 'Client Name', 'text'),
-          el('div', { className: 'field' },
-            el('label', { className: 'label' }, 'Type'),
-            el('div', { className: 'control' },
-              el('div', { className: 'select' }, this.typeSelect)
-            )
-          ),
-          this.hostInput = new Input('Host'),
-          this.userInput = new Input('Username'),
-          this.passInput = new Input('Password', { type: 'password' }),
-          this.topicInput = new Input('Topic', { placeholder: 'Ntfy Topic' })
-        ),
-        el('footer', { className: 'modal-card-foot' },
-          this.saveButton,
-          this.cancelButton
-        )
-      ])
-    ]);
-
-    this.typeSelect.onchange = () => {
-      if (this.typeSelect.value === BACKEND_TYPES.nostr) {
-        this.userInput.disable();
-        this.topicInput.disable();
-        this.passInput.setLabel('Private Key');
-      } else {
-        this.userInput.enable();
-        this.topicInput.enable();
-        this.passInput.setLabel('Password');
-      }
-    };
+    this.state = { status: 'Tap to copy' };
   }
 
-  show(data) {
-    mount(document.body, this.el);
-    if (data.type) {
-      this.title.textContent = 'Edit Backend';
-      this.clientInput.setValue(data.client);
-      this.typeSelect.value = data.type;
-      this.hostInput.setValue(data.host);
-      this.userInput.setValue(data.user);
-      this.passInput.setValue(data.pass);
-      this.topicInput.setValue(data.topic);
-      if (data.type === BACKEND_TYPES.nostr) {
-        this.userInput.disable();
-        this.topicInput.disable();
-        this.passInput.setLabel('Private Key');
-      }
-    } else {
-      this.title.textContent = 'Add Backend';
-      this.clientInput.setValue(`client-${(Math.random().toString(36)+'00000000000000000').slice(2, 10)}`);
-    }
-    this.el.classList.add('is-active');
-  }
-
-  hide() { this.el.classList.remove('is-active'); }
-
-  destroy() {
-    this.hide();
-    unmount(document.body, this.el)
-  }
-
-  save() {
-    app.saveBackend({
-      client: this.clientInput.getValue(),
-      type: this.typeSelect.value,
-      host: this.hostInput.getValue(),
-      user: this.userInput.getValue(),
-      pass: this.passInput.getValue(),
-      topic: this.topicInput.getValue()
-    });
-    this.destroy();
+  render({ client, contents, timestamp }) {
+    return html`
+    <div class="box"  onClick=${() => {
+      navigator.clipboard.writeText(contents).then(() => {
+        this.setState({ status: 'Copied!' });
+        setTimeout(() => {
+          this.setState({ status: 'Tap to copy' });
+        }, 2000);
+      });
+    }}>
+      <p>
+        <strong>${client} </strong><small>${(new Date(timestamp)).toLocaleString()}</small>
+        <br />
+        <span style="overflow-wrap: break-word;">${contents.length > 140 ? `${contents.substring(0, 137)}...` : contents}</span>
+        <br />
+        <small>${this.state.status}</small>
+      </p>
+    </div>
+    `;
   }
 }
 
-class Backend {
+class Input extends Component {
   constructor() {
-    this.client = null;
-    this.data = {};
-
-    this.backendType = el('small', 'None');
-    this.backendHost = el('span');
-    this.modal = new AddEditBackendModal();
-
-    this.el = el('div', { className: 'box' },
-      el('p',
-        el('strong', 'Backend '),
-        this.backendType,
-        el('br'),
-        el('small', 'Tap to configure')
-      )
-    );
-
-    this.el.onclick = () => {
-      this.modal.show(this.data);
+    super();
+    this.state = {
+      value: '',
+      isHidden: null,
+      labelOverride: '',
+      placeholderOverride: ''
     };
   }
 
-  update(data) {
-    this.data = data;
-    this.backendType.textContent = data.type;
-    this.backendHost.textContent = data.host;
-    setChildren(this.el,
-      el('p',
-        el('strong', 'Backend '),
-        this.backendType,
-        el('br'),
-        this.backendHost,
-        el('br'),
-        el('small', 'Tap to configure')
-      )
-    );
+  render(props) {
+    if (this.state.isHidden === null && props.hidden === true) this.state.isHidden = true;
+    if (!this.state.value && props.value) this.state.value = props.value;
+    return html`
+    <div class="field${this.state.isHidden ? ' is-hidden' : ''}">
+      <label class="label">${this.state.labelOverride || props.label}</label>
+      <div class="control">
+        <input class="input" type="${props.type || 'text'}"
+          placeholder="${this.state.placeholderOverride || props.placeholder || ''}"
+          value="${this.state.value}"
+          onInput=${(e) => {
+            this.state.value = e.target.value;
+          }} />
+      </div>
+    </div>
+    `;
+  }
+}
 
-    if (this.client) {
-      this.client.close();
-    }
+class Select extends Component {
+  constructor() {
+    super();
+    this.state = { value: null, isHidden: null };
+  }
 
-    switch (data.type) {
+  render(props) {
+    if (this.state.value === null && props.selected) this.state.value = props.selected;
+    if (typeof props?.options === 'object') props.options = Object.values(props.options);
+    return html`
+    <div class="field${this.state.isHidden ? ' is-hidden' : ''}">
+      <label class="label">${props.label}</label>
+      <div class="control">
+        <div class="select">
+          <select value=${this.state.value} onChange=${(e) => {
+            this.setState({ value: e.target.value });
+            if (props.callbackthis && props.callback) props.callback.call(props.callbackthis, e.target.value);
+          }}>
+            ${this.state.value ? '' : '<option value="None" />'}
+            ${props.options.map(o => html`<option value=${o}>${o}</option>`)}
+          </select>
+        </div>
+      </div>
+    </div>
+    `;
+  }
+}
+
+class Settings extends Component {
+  constructor() {
+    super();
+
+    this.clientRef = createRef();
+    this.typeRef = createRef();
+    this.hostRef = createRef();
+    this.userRef = createRef();
+    this.passRef = createRef();
+    this.topicRef = createRef();
+
+    this.defaultClient = `clipshift-${(Math.random().toString(36)+'00000000000000000').slice(2, 10)}`;
+  }
+
+  render({ app }) {
+    if (!this.app) this.app = app;
+    return html`
+    <div class="card${app.state.showSettings ? '' : ' is-hidden'}">
+      <header class="card-header">
+        <p class="card-header-title">Settings</p>
+      </header>
+      <div class="card-content">
+        <${Input} label="Client Name" placeholder="Client name" value=${app.state.backend.client} ref=${this.clientRef} />
+        <${Select} label="Backend Type" options=${BACKEND_TYPES} selected=${app.state.backend.type} callbackthis=${this} callback=${this.typeChanged} ref=${this.typeRef} />
+        <${Input} label="Host URL" placeholder="${app.state.backend.type === BACKEND_TYPES.nostr ? 'wss://' : 'https://'}" value=${app.state.backend.host} ref=${this.hostRef} />
+        <${Input} label="Username" placeholder="Username" value=${app.state.backend.user} ref=${this.userRef} />
+        <${Input} label="Password" type="password" value=${app.state.backend.pass} ref=${this.passRef} />
+        <${Input} label="Topic" placeholder="Topic" value=${app.state.backend.topic} hidden=${app.state.backend.type !== BACKEND_TYPES.ntfy} ref=${this.topicRef} />
+      </div>
+      <footer class="card-footer">
+        <button class="button is-success m-2" onClick=${() => {
+          const backend = {
+            client: this.clientRef.current.state.value,
+            type: this.typeRef.current.state.value,
+            host: this.hostRef.current.state.value
+          };
+          // Backend-specific options
+          switch (backend.type) {
+            case BACKEND_TYPES.nostr:
+              // No user
+              break;
+            case BACKEND_TYPES.ntfy:
+              if (this.topicRef.current.state.value) backend.topic = this.topicRef.current.state.value;
+            default:
+              if (this.userRef.current.state.value) backend.user = this.userRef.current.state.value;
+              break;
+          }
+          if (this.passRef.current.state.value) backend.pass = this.passRef.current.state.value;
+          app.setState({ backend, showSettings: false });
+          app.connectToBackend(backend);
+          localStorage.setItem('clipshift-config', JSON.stringify({ backend }));
+        }}>Save</button>
+        <button class="button my-2" onClick=${() => {
+          app.setState({ showSettings: false });
+          this.resetFieldValues();
+        }}>Cancel</button>
+      </footer>
+    </div>
+    `;
+  }
+
+  componentDidMount() {
+    this.resetFieldValues();
+  }
+
+  resetFieldValues() {
+    this.clientRef.current.state.value = this.app.state.backend.client || this.defaultClient;
+    this.typeRef.current.state.value = this.app.state.backend.type || 'None';
+    this.hostRef.current.state.value = this.app.state.backend.host || '';
+    this.userRef.current.state.value = this.app.state.backend.user || '';
+    this.passRef.current.state.value = this.app.state.backend.pass || '';
+    this.topicRef.current.state.value = this.app.state.backend.topic || '';
+    this.typeChanged(this.app.state.backend.type);
+  }
+
+  typeChanged(t) {
+    switch (t) {
+      case BACKEND_TYPES.nostr:
+        this.userRef.current.setState({ isHidden: true });
+        this.topicRef.current.setState({ isHidden: true });
+        this.passRef.current.setState({ labelOverride: 'Private Key' });
+        break;
       case BACKEND_TYPES.ntfy:
-        this.client = new NtfyClient(data.client, data.host, data.topic, data.user, data.pass);
+        this.topicRef.current.setState({ isHidden: false });
+      default:
+        this.userRef.current.setState({ isHidden: false });
+        this.passRef.current.setState({ labelOverride: 'Password' });
+        break;
+    }
+  }
+}
+
+class Backend extends Component {
+  render({ app }) {
+    return html`
+    <div class="box${app.state.showSettings ? ' is-hidden' : ''}" onClick=${() => app.setState({ showSettings: true })}>
+      <p>
+        <strong>Backend</strong><small> ${app.state.backend.type}</small>
+        <br/>
+        ${app.state.backend.type !== 'None' ? html`<span>${app.state.backend.host}</span><br/>` : ''}
+        <small>Tap to configure</small>
+      </p>
+    </div>`;
+  }
+}
+
+class App extends Component {
+  constructor() {
+    super();
+    const stored = JSON.parse(localStorage.getItem('clipshift-config') || '{"backend":{"type":"None"}}');
+    this.state = {
+      ...stored,
+      showSettings: false,
+      client: null,
+      clips: []
+    }
+    this.connectToBackend();
+  }
+
+  render() {
+    return html`
+    <div>
+      <p class="title is-1 has-text-centered has-text-light mt-4">⬆️ clipshift</p>
+
+      <${Settings} app=${this} />
+      <${Backend} app=${this} />
+      
+      ${this.state.client !== null ? html`<button class="button is-warning mt-2 is-centered"
+        onClick=${() => {
+          navigator.clipboard.readText().then((clip) => {
+            this.state.client.sendClip(clip);
+          });
+        }}>Send Clipboard</button>` : ''}
+      <hr />
+      ${this.state.clips.length > 0 ?
+        this.state.clips.map(c => html`<${Clip} client=${c.client} contents=${c.contents} timestamp=${c.timestamp} />`)
+        : 'Future clipboard pushes will show here'}
+    </div>`;
+  }
+
+  connectToBackend(opts) {
+    if (!opts) opts = this.state.backend;
+    if (!opts.type || opts.type === 'None' || !opts.host) return;
+    switch (opts.type) {
+      case BACKEND_TYPES.nostr:
+        this.state.client = new NostrClient(this, opts.client, opts.host, opts.pass);
+        break;
+      case BACKEND_TYPES.ntfy:
+        this.state.client = new NtfyClient(this, opts.client, opts.host, opts.topic, opts.user, opts.pass);
         break;
     }
   }
 
-  sendClip(contents) {
-    if (this.client) {
-      this.client.sendClip(contents);
+  clipReceived(client, contents) {
+    if (client !== this.state.backend.client) {
+      this.state.clips = [{ client, contents, timestamp: Date.now()}, ...this.state.clips];
+      if (this.state.clips.length > 10) this.state.clips = this.state.clips.slice(0, 10);
+      this.setState({ clips: this.state.clips });
     }
   }
 }
 
-class Clip {
-  constructor(data) {
-    this.data = data;
-
-    this.copyButton = el('button', { className: 'button is-small is-dark mt-2' }, 'Copy');
-    this.copyButton.onclick = () => { this.setClipboard() };
-
-    this.el = el('div', { className: 'box' },
-      el('p',
-        this.client = el('strong'),
-        this.timestamp = el('small'),
-        el('br'),
-        this.message = el('span'),
-        el('br'),
-        this.copyButton
-      )
-    );
-  }
-
-  update(data) {
-    this.data = data;
-    this.client.textContent = data.client + ' ';
-    this.timestamp.textContent = `${(new Date(data.timestamp)).toLocaleString()}`;
-    this.message.textContent = data.message;
-    if (data.client === 'Info') {
-      this.copyButton.classList.add('is-hidden');
-    } else {
-      this.copyButton.classList.remove('is-hidden');
-    }
-  }
-
-  setClipboard() {
-    navigator.clipboard.writeText(this.data.message).then(() => {
-      this.copyButton.textContent = 'Copied';
-      setTimeout(() => {
-        this.copyButton.textContent = 'Copy';
-      }, 1000);
-    });
-  }
-}
-
-class App {
-  constructor() {
-    const storedData = localStorage.getItem('clipshift-config') || '{}';
-    const parsed = JSON.parse(storedData);
-
-    this.backend = new Backend(this);
-
-    this.sendButton = el('button', { className: 'button is-warning mt-2 is-centered' }, 'Send Clipboard')
-    this.sendButton.onclick = () => {
-      navigator.clipboard.readText().then((clip) => {
-        this.backend.sendClip(clip);
-      });
-    }
-
-    this.el = el('div',
-      this.backend,
-      this.sendButton,
-      el('hr'),
-      this.clipStash = el('div', { className: 'mt-4' })
-    );
-
-    this.clips = list(this.clipStash, Clip);
-    this.clips.update([{ client: 'Info', timestamp: Date.now(), message: 'Future clipboard updates will appear here' }]);
-
-    this.update(parsed)
-  }
-
-  update(data) {
-    this.data = data;
-    localStorage.setItem('clipshift-config', JSON.stringify(this.data));
-
-    if (this.data.backend) {
-      this.backend.update(this.data.backend);
-    }
-  }
-
-  saveBackend(data) {
-    this.data.backend = data;
-    this.update(this.data);
-  }
-
-  clipReceived() {
-    this.clips.update(CLIPS)
-  }
-}
-
-const app = new App();
-mount(document.getElementById('app'), app);
-
-function addClip(client, message, timestamp) {
-  CLIPS = [{ client: client || '', message, timestamp: timestamp || Date.now()}, ...CLIPS];
-  if (CLIPS.length > 10) CLIPS = CLIPS.slice(0, 10);
-  app.clipReceived();
-}
+render(html`<${App} />`, document.getElementById('app'));
