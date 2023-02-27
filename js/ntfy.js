@@ -16,9 +16,16 @@ class NtfyClient {
     }
   }
 
-  handleEvent(e) {
+  async handleEvent(e) {
     const message = JSON.parse(e.data);
     if (message.title === this.client) return;
+    if (this.app.state.backend.encryptionkey) {
+      try {
+        message.message = await this.app.state.scrambler.decrypt(message.message);
+      } catch(e) {
+        console.dir(e);
+      }
+    }
     this.app.clipReceived(message.title, message.message, Date.now());
   }
 

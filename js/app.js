@@ -3,6 +3,7 @@ import htm from 'https://unpkg.com/htm@3.1.1?module';
 
 import { NtfyClient } from './ntfy.js';
 import { NostrClient } from './nostr.js';
+import { Scrambler } from './crypto.js';
 
 const html = htm.bind(h);
 
@@ -108,6 +109,7 @@ class Settings extends Component {
     this.userRef = createRef();
     this.passRef = createRef();
     this.topicRef = createRef();
+    this.encKeyRef = createRef();
 
     this.defaultClient = `clipshift-${(Math.random().toString(36)+'00000000000000000').slice(2, 10)}`;
   }
@@ -126,6 +128,7 @@ class Settings extends Component {
         <${Input} label="Username" placeholder="Username" value=${app.state.backend.user} ref=${this.userRef} />
         <${Input} label="Password" type="password" value=${app.state.backend.pass} ref=${this.passRef} />
         <${Input} label="Topic" placeholder="Topic" value=${app.state.backend.topic} hidden=${app.state.backend.type !== BACKEND_TYPES.ntfy} ref=${this.topicRef} />
+        <${Input} label="Encryption Key" type="password" value=${app.state.backend.encryptionkey} hidden=${app.state.backend.type !== BACKEND_TYPES.ntfy} ref=${this.encKeyRef} />
       </div>
       <footer class="card-footer">
         <button class="button is-success m-2" onClick=${() => {
@@ -141,6 +144,7 @@ class Settings extends Component {
               break;
             case BACKEND_TYPES.ntfy:
               if (this.topicRef.current.state.value) backend.topic = this.topicRef.current.state.value;
+              if (this.encKeyRef.current.state.value) backend.encryptionkey = this.encKeyRef.current.state.value;
             default:
               if (this.userRef.current.state.value) backend.user = this.userRef.current.state.value;
               break;
@@ -170,6 +174,7 @@ class Settings extends Component {
     this.userRef.current.state.value = this.app.state.backend.user || '';
     this.passRef.current.state.value = this.app.state.backend.pass || '';
     this.topicRef.current.state.value = this.app.state.backend.topic || '';
+    this.encKeyRef.current.state.value = this.app.state.backend.encryptionkey || '';
     this.typeChanged(this.app.state.backend.type);
   }
 
@@ -179,9 +184,11 @@ class Settings extends Component {
         this.userRef.current.setState({ isHidden: true });
         this.topicRef.current.setState({ isHidden: true });
         this.passRef.current.setState({ labelOverride: 'Private Key' });
+        this.encKeyRef.current.setState({ isHidden: true });
         break;
       case BACKEND_TYPES.ntfy:
         this.topicRef.current.setState({ isHidden: false });
+        this.encKeyRef.current.setState({ isHidden: false });
       default:
         this.userRef.current.setState({ isHidden: false });
         this.passRef.current.setState({ labelOverride: 'Password' });
@@ -226,10 +233,16 @@ class App extends Component {
       <${Backend} app=${this} />
       
       ${this.state.client !== null ? html`<button class="button is-warning mt-2 is-centered"
-        onClick=${() => {
-          navigator.clipboard.readText().then((clip) => {
+        onClick=${async () => {
+          try {
+            let clip = await navigator.clipboard.readText();
+            if (this.state.backend.encryptionkey) {
+                clip = await this.state.scrambler.encrypt(clip);
+            }
             this.state.client.sendClip(clip);
-          });
+          } catch (e) {
+            console.dir(e);
+          }
         }}>Send Clipboard</button>` : ''}
       <hr />
       ${this.state.clips.length > 0 ?
@@ -240,13 +253,19 @@ class App extends Component {
 
   connectToBackend(opts) {
     if (!opts) opts = this.state.backend;
-    if (!opts.type || opts.type === 'None' || !opts.host) return;
+    if (this.state.client) this.state.client.close();
+    if (!opts.type || opts.type === 'None' || !opts.host) {
+      this.state.client = null;
+      return;
+    }
     switch (opts.type) {
       case BACKEND_TYPES.nostr:
-        this.state.client = new NostrClient(this, opts.client, opts.host, opts.pass);
+        this.setState({ client: new NostrClient(this, opts.client, opts.host, opts.pass) });
         break;
       case BACKEND_TYPES.ntfy:
-        this.state.client = new NtfyClient(this, opts.client, opts.host, opts.topic, opts.user, opts.pass);
+        const newState = { client: new NtfyClient(this, opts.client, opts.host, opts.topic, opts.user, opts.pass) };
+        if (opts.encryptionkey) newState.scrambler = new Scrambler(opts.encryptionkey);
+        this.setState(newState);
         break;
     }
   }

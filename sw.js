@@ -1,6 +1,6 @@
 const GHPATH = '/web';
 const APP_PREFIX = 'clipshift_';
-const VERSION = 'version_002';
+const VERSION = 'version_003';
 const URLS = [    
   `${GHPATH}/`,
   `${GHPATH}/index.html`,
@@ -8,7 +8,8 @@ const URLS = [
   `${GHPATH}/img/icon.png`,
   `${GHPATH}/js/app.js`,
   `${GHPATH}/js/ntfy.js`,
-  `${GHPATH}/js/nostr.js`
+  `${GHPATH}/js/nostr.js`,
+  `${GHPATH}/js/crypto.js`
 ]
 
 const CACHE_NAME = APP_PREFIX + VERSION
